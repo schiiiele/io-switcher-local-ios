@@ -1,0 +1,21 @@
+# 개인 설정 및 데이터 파일 숨기기
+
+config.json
+
+schedules.json
+
+
+
+# 파이썬 실행 시 생기는 찌꺼기 파일들
+
+__pycache__/
+
+*.py[cod]
+
+*$py.class
+
+
+
+# Mac 시스템 전용 숨김 파일
+
+.DS_Store
