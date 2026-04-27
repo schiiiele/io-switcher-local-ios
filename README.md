@@ -72,10 +72,10 @@ pip install fastapi uvicorn bleak zeroconf
 터미널이나 CMD에서 프로젝트 폴더(`io-switcher-local`)로 이동한 뒤 실행하세요.
 
 ```bash
-python -m switcher.main
+python3.11 -m switcher.main
 ```
 
-> macOS에서 버전 충돌이 생기면 `python3.11`을 사용
+> 버전 충돌이 생기면 `python`을 사용
 
 실행 후 터미널에 아래와 같이 뜨면 성공입니다.
 
