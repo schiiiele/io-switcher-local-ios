@@ -94,6 +94,30 @@ python3.11 -m switcher.main
 2. 하단 **장치 설정** 메뉴에서 `주변 장치 스캔`을 눌러 스위처를 찾아 저장합니다.
 3. 메인 화면에서 ON/OFF, 예약, 타이머를 자유롭게 사용하면 됩니다.
 
+<img width="750" height="1191" alt="IMG_1083" src="https://github.com/user-attachments/assets/b3666c5f-ca2f-4d09-9a1d-eed5f8740cce" />
+<img width="750" height="1230" alt="IMG_1084" src="https://github.com/user-attachments/assets/1bef378f-7d1f-453d-adc6-53626d1bb293" />
+<img width="750" height="1226" alt="IMG_1085" src="https://github.com/user-attachments/assets/f89b196c-84a3-4777-8c47-48cae0824eaf" />
+<img width="406" height="679" alt="스크린샷 2026-04-27 오후 5 57 36" src="https://github.com/user-attachments/assets/894c8310-cc8f-4554-9103-0bcf904d3a47" />
+<img width="750" height="1188" alt="IMG_1087" src="https://github.com/user-attachments/assets/57b771ea-848a-4887-b27d-59cda6621229" />
+
+---
+
+
+### 📱 스마트폰에서 앱처럼 사용하기 (PWA)
+매번 브라우저를 열고 주소를 입력하는 번거로움 없이, 홈 화면에 추가하여 **아이콘 클릭 한 번으로 접속**할 수 있습니다.
+
+#### **🍎 아이폰 (Safari) 기준**
+1. 아이폰 **Safari** 브라우저에서 서버 주소로 접속합니다.
+2. 하단 바 중앙의 **[공유 버튼]** (내보내기 아이콘 📤)을 누릅니다.
+3. 리스트를 아래로 내려 **[홈 화면에 추가]**를 선택합니다.
+4. 이름을 '스위처'로 설정하고 추가하면 홈 화면에 전용 아이콘이 생깁니다.
+
+#### **🤖 안드로이드 (Chrome) 기준**
+1. **Chrome** 브라우저에서 서버 주소로 접속합니다.
+2. 우측 상단 **[점 세 개]** (메뉴) 아이콘을 누릅니다.
+3. **[홈 화면에 추가]** 또는 **[앱 설치]**를 선택합니다.
+
+
 ---
 
 ## ⚙️ 자동 시작 설정 (부팅 시 자동 실행)
