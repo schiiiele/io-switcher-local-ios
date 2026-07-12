@@ -1,39 +1,54 @@
-# 💡 I/O Switcher Local Server
+# 💡 I/O Switcher Local Server — V2
 
 회사가 사라져 공식 앱을 사용할 수 없는 **아이오 스위처(I/O Switcher)**를 위한 독립형 로컬 제어 서버입니다.
-공식 서버 없이도 맥북 또는 윈도우 PC를 통해 1구 및 2구 스위처를 완벽하게 제어하고 예약할 수 있습니다.
+공식 서버 없이도 맥북 또는 윈도우 PC를 통해 스위처를 제어하고 예약할 수 있습니다.
 
 > **⚠️ iOS 사용자 안내**
 > iOS의 블루투스 정책 제한으로 아이폰 브라우저에서는 BLE 기기 직접 제어가 불가능합니다.
-> 반드시 **컴퓨터(맥/윈도우)를 서버로 함께 사용**해야 합니다. 컴퓨터가 절전 모드여도 서버는 정상 작동합니다.
+> 반드시 **컴퓨터(맥/윈도우)를 서버로 함께 사용**해야 합니다.
+> 컴퓨터가 완전 잠자기(sleep)에 들어가면 예약이 실행되지 않을 수 있으니, 전원을 연결하고 "디스플레이만 끄기" 상태로 두는 것을 권장합니다.
+
+---
+
+## 🆕 V2에서 달라진 점
+
+V2는 여러 파일로 나뉘어 있던 구조를 **`switcher_server.py` 단일 파일**로 합치고, 몇 달간 실제로 매일 쓰면서 다듬은 버전입니다.
+
+- **디자인 전면 개편** — 밝은 배경의 카드형 UI, 큰 버튼. 아이콘을 전부 파일 안에 내장해 인터넷이 끊겨도 UI가 깨지지 않습니다.
+- **BLE 전송 자동 재시도** — 스위처의 블루투스 신호를 순간적으로 놓쳐 "버튼은 눌리는데 불이 안 켜지는" 문제를 자동 재시도(2초 간격 최대 3회)로 해결했습니다.
+- **`switcher.local` 접속 버그 수정** — 주소 등록이 잘못되어 IP를 직접 입력해야만 접속되던 문제를 고쳤습니다. 이제 폰에서 `http://switcher.local:5001` 로 바로 접속됩니다.
+- **연결 리셋 & 기기 잊기** — BLE 연결이 꼬여서 먹통이 됐을 때 앱에서 버튼 한 번으로 연결을 정리할 수 있습니다.
+- **작동 중인 예약도 수정 가능** — 예약을 껐다 켜지 않아도 시간·요일·동작을 바로 고칠 수 있습니다.
+- **타이머 프리셋** — 자주 쓰는 시간(분)을 탭 한 번으로 설정.
+- **배터리는 탭해서 조회** — 자동 조회로 인한 블루투스 충돌을 없앴습니다.
+
+> **⚠️ 2구 사용자 주의**
+> V2는 2구 스위처를 **한꺼번에**(둘 다 켜기/둘 다 끄기) 제어하며, 초기에 실기기로 검증한 키 값을 사용합니다. V1에 있던 "구별 개별 제어"는 제거됐습니다. 2구 기기에서 동작이 이상하면 **Issues**로 제보해 주세요 — V1이 필요하면 [`v1` 태그](../../tree/v1)에서 받을 수 있습니다.
+
+<img width="470" alt="V2 UI" src="docs/screenshot-v2.png" />
 
 ---
 
 ## ✨ 주요 기능
 
-- **1구 & 2구 지원** 
-- **요일별 예약 & 타이머**
+- **1구 & 2구 지원**
+- **요일별 예약 & 타이머** — 작동 중에도 수정 가능
 - **배터리 잔량 확인**
 - **간편한 장치 등록** — 웹 UI에서 블루투스 스캔으로 장치 등록
+- **연결 리셋 / 기기 잊기** — 꼬인 BLE 연결 복구
 
 ---
 
 ## 📁 프로젝트 구조
 
 ```
-io-switcher-local/
-├── .gitignore
+io-switcher-local-ios/
 ├── README.md
-└── switcher/
-    ├── __init__.py
-    ├── main.py
-    ├── ble.py
-    ├── routes.py
-    ├── scheduler.py
-    ├── storage.py
-    └── static/
-        └── ui.html
+├── requirements.txt
+└── switcher_server.py   ← 서버 + 웹 UI 전부 이 파일 하나
 ```
+
+`config.json`(장치 정보)과 `schedules.json`(예약)은 첫 실행 후 같은 폴더에 자동 생성됩니다.
 
 ---
 
@@ -51,7 +66,7 @@ io-switcher-local/
 brew install python@3.11
 
 # 3. 필요 라이브러리 설치
-python3.11 -m pip install fastapi uvicorn bleak zeroconf
+python3.11 -m pip install flask bleak zeroconf
 ```
 
 ### 🪟 Windows
@@ -62,46 +77,41 @@ python3.11 -m pip install fastapi uvicorn bleak zeroconf
 이후 명령 프롬프트(CMD) 또는 PowerShell에서:
 
 ```bash
-pip install fastapi uvicorn bleak zeroconf
+pip install flask bleak zeroconf
 ```
 
 ---
 
 ## ▶️ 서버 실행
 
-터미널이나 CMD에서 프로젝트 폴더(`io-switcher-local`)로 이동한 뒤 실행하세요.
+터미널이나 CMD에서 프로젝트 폴더로 이동한 뒤 실행하세요.
 
 ```bash
-python3.11 -m switcher.main
+python3.11 switcher_server.py
 ```
 
-> 버전 충돌이 생기면 `python`을 사용
+> 윈도우이거나 버전 충돌이 생기면 `python switcher_server.py`
 
 실행 후 터미널에 아래와 같이 뜨면 성공입니다.
 
 ```
+🌐 mDNS 등록 완료: http://switcher.local:5001
+
 ✅ 서버 시작!
-📱 접속 주소: http://switcher.local:5001
-   (IP 직접:  http://192.168.x.x:5001)
+📱 폰에서 접속: http://switcher.local:5001
 ```
 
 ---
 
 ## 📱 사용 방법
 
-1. 서버 실행 후 터미널에 표시된 IP 주소를 **폰 브라우저 주소창에 직접 입력**합니다.
-   (`http://` 포함 필수. `https`로 자동 변환되면 접속이 안 됩니다.)
-2. 하단 **장치 설정** 메뉴에서 `주변 장치 스캔`을 눌러 스위처를 찾아 저장합니다.
+1. 폰 브라우저 주소창에 **`http://switcher.local:5001`** 을 입력합니다.
+   (`http://` 포함 필수. `https`로 자동 변환되면 접속이 안 됩니다. 안 되면 터미널에 표시된 IP 주소로 접속하세요.)
+2. 우측 상단 블루투스 버튼 → **주변 장치 스캔**으로 스위처를 찾아 저장합니다.
 3. 메인 화면에서 ON/OFF, 예약, 타이머를 자유롭게 사용하면 됩니다.
 
-<img width="406" height="679" alt="IMG_1083" src="https://github.com/user-attachments/assets/b3666c5f-ca2f-4d09-9a1d-eed5f8740cce" />
-<img width="406" height="679" alt="스크린샷 2026-04-27 오후 5 57 36" src="https://github.com/user-attachments/assets/894c8310-cc8f-4554-9103-0bcf904d3a47" />
-<img width="406" height="679" alt="IMG_1087" src="https://github.com/user-attachments/assets/57b771ea-848a-4887-b27d-59cda6621229" />
-
----
-
-
 ### 📱 스마트폰에서 앱처럼 사용하기 (PWA)
+
 매번 브라우저를 열고 주소를 입력하는 번거로움 없이, 홈 화면에 추가하여 **아이콘 클릭 한 번으로 접속**할 수 있습니다.
 
 #### **🍎 아이폰 (Safari) 기준**
@@ -115,6 +125,14 @@ python3.11 -m switcher.main
 2. 우측 상단 **[점 세 개]** (메뉴) 아이콘을 누릅니다.
 3. **[홈 화면에 추가]** 또는 **[앱 설치]**를 선택합니다.
 
+---
+
+## ⬆️ V1에서 업그레이드하기
+
+1. 새 `switcher_server.py`를 받습니다 (`git pull` 또는 파일 다운로드).
+2. 기존에 쓰던 `switcher/config.json`과 `switcher/schedules.json`을 **`switcher_server.py` 옆으로 복사**하면 장치·예약이 그대로 유지됩니다. (파일 형식이 같습니다.)
+3. 복사하지 않아도 웹 UI에서 다시 스캔·등록하면 됩니다.
+4. 자동 시작을 등록해뒀다면 아래의 새 plist 내용으로 바꿔주세요 (실행 명령이 바뀌었습니다).
 
 ---
 
@@ -135,11 +153,10 @@ python3.11 -m switcher.main
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/python3.11</string>
-    <string>-m</string>
-    <string>switcher.main</string>
+    <string>switcher_server.py</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/YOUR_USERNAME/Desktop/io-switcher-local</string>
+  <string>/Users/YOUR_USERNAME/io-switcher-local-ios</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -148,16 +165,22 @@ python3.11 -m switcher.main
 </plist>
 ```
 
-`YOUR_USERNAME` 부분을 본인 맥 사용자 이름으로 바꾼 뒤 터미널에서 등록합니다.
+`YOUR_USERNAME`과 `WorkingDirectory` 경로를 본인 환경(레포를 받아둔 폴더)에 맞게 바꾼 뒤 터미널에서 등록합니다.
 
 ```bash
 launchctl load ~/Library/LaunchAgents/com.switcher.server.plist
 ```
 
+이후 코드를 업데이트했을 때는 아래 명령으로 재시작하면 됩니다.
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.switcher.server
+```
+
 ### 🪟 Windows — 시작프로그램 등록
 
 `Win + R` 키를 누르고 `shell:startup` 입력 → 시작프로그램 폴더가 열립니다.
-해당 폴더에 `main.py`의 바로가기를 만들면 부팅 시 자동 실행됩니다.
+해당 폴더에 `switcher_server.py`의 바로가기를 만들면 부팅 시 자동 실행됩니다.
 
 ---
 
@@ -240,7 +263,7 @@ python3.11 /tmp/del_timers.py
 
 ⚠️ 참고사항
 기기 안전: 이 도구는 기기 안에 저장된 예약 데이터만 초기화할 뿐, 기기 하드웨어나 펌웨어 자체를 손상시키지 않습니다.
-기능 유지: 기기의 수동 버튼 작동이나 본 서버(main.py)를 통해 새롭게 설정하는 예약 기능은 그대로 사용 가능합니다.
+기능 유지: 기기의 수동 버튼 작동이나 본 서버(`switcher_server.py`)를 통해 새롭게 설정하는 예약 기능은 그대로 사용 가능합니다.
 충돌 방지: 서버가 이미 실행 중이라면 서버를 잠시 끈 뒤 이 청소 도구를 실행해야 블루투스 통신 충돌이 발생하지 않습니다.
 
 ---
@@ -248,8 +271,8 @@ python3.11 /tmp/del_timers.py
 ## ⚠️ 주의사항
 
 - **같은 Wi-Fi 필수** — 서버(컴퓨터)와 클라이언트(폰)가 반드시 같은 네트워크에 있어야 합니다.
-- **IP 고정 권장** — 공유기 재부팅 시 IP가 바뀌면 폰 즐겨찾기가 안 먹힐 수 있습니다. 맥 시스템 설정에서 수동 IP를 설정해두면 편합니다.
-- **방화벽** — 접속이 안 될 경우 시스템 설정에서 Python의 네트워크 접근을 허용하세요.
+- **접속이 안 될 때** — 폰 브라우저를 완전히 닫았다 다시 열어보고, 그래도 안 되면 터미널에 표시된 IP로 직접 접속해 보세요. 맥 시스템 설정에서 Python의 네트워크(로컬 네트워크) 접근이 허용돼 있는지도 확인하세요.
+- **불이 안 켜질 때** — V2는 자동으로 3회까지 재시도하므로 버튼이 몇 초 돌다가 성공하는 것이 정상입니다. 계속 실패하면 우측 상단 블루투스 메뉴의 **연결 리셋**을 눌러보세요.
 
 ---
 
