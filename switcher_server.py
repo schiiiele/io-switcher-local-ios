@@ -17,6 +17,9 @@ from flask import Flask, jsonify, request, Response
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 SCHEDULE_FILE = os.path.join(BASE_DIR, "schedules.json")
+BATTERY_STATE_FILE = os.path.join(BASE_DIR, "battery_state.json")
+# {"url": ..., "token": ...} — 이 레포는 public이라 gitignore. 환경변수로도 줄 수 있다.
+HUB_PUSH_FILE = os.path.join(BASE_DIR, "hub_push.json")
 
 # ── BLE UUIDs (고정) ─────────────────────────────
 CHAR_UUID    = "000015ba-0000-1000-8000-00805f9b34fb"
@@ -125,6 +128,124 @@ async def _read_battery():
 
 def get_battery_level():
     return _run_ble(_read_battery())
+
+# ── 폰 푸시 (허브 서버 경유) ──────────────────────
+# 스위처는 http://switcher.local 로 열려서 iOS가 웹푸시를 아예 막는다(https가 아니면
+# 보안 컨텍스트가 아니라 Push API 등록 자체가 안 됨). 그래서 알림은 직접 쏘지 않고,
+# 이미 폰 구독을 들고 있는 공개 허브 서버(https)에 "대신 보내줘"라고 부탁한다.
+def load_hub_push():
+    url, token = os.environ.get("HUB_PUSH_URL"), os.environ.get("HUB_TOKEN")
+    if url and token:
+        return {"url": url, "token": token}
+    if os.path.exists(HUB_PUSH_FILE):
+        try:
+            with open(HUB_PUSH_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError) as e:
+            print(f"[푸시] 설정 파일을 못 읽음: {e}", flush=True)
+    return {}
+
+def hub_push(title, body, url="./"):
+    """보냈으면 True. 실패해도 예외를 밖으로 안 흘린다 — 알림 때문에 조명 기능이 멈추면 안 된다."""
+    import urllib.request
+    cfg = load_hub_push()
+    if not cfg.get("url") or not cfg.get("token"):
+        print("[푸시] hub_push.json 없음 — 알림 건너뜀", flush=True)
+        return False
+    req = urllib.request.Request(
+        cfg["url"], method="POST",
+        data=json.dumps({"title": title, "body": body, "url": url}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "X-Hub-Token": cfg["token"]})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        print(f"[푸시] {d.get('sent')}건 발송 — {title}", flush=True)
+        return bool(d.get("ok"))
+    except Exception as e:
+        print(f"[푸시] 실패: {e}", flush=True)
+        return False
+
+# ── 배터리 자동 감시 ─────────────────────────────
+# 조명 배터리는 하루에 1%도 잘 안 닳아서 하루 한 번이면 충분하다. 읽으려면 BLE로 기기에
+# 붙어야 해서 공짜가 아니고 실제로 종종 실패한다(로그에 기록 있음) — 그래서 재시도를 둔다.
+BATTERY_CHECK_HOUR = 21          # 매일 저녁 9시
+BATTERY_STEPS = [15, 10, 5]      # 계단식 경고 — 단계마다 딱 한 번씩만 알림
+BATTERY_RETRY_SEC = 30 * 60
+BATTERY_MAX_TRIES = 3
+BATTERY_FAIL_DAYS = 3            # 연속 이만큼 실패하면 "기기가 안 잡힌다" 알림
+
+def load_battery_state():
+    if os.path.exists(BATTERY_STATE_FILE):
+        try:
+            with open(BATTERY_STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            pass
+    return {"level": None, "at": None, "alerted_step": None,
+            "fail_streak": 0, "fail_alerted": False}
+
+def save_battery_state(st):
+    _atomic_save_json(BATTERY_STATE_FILE, st, indent=2)
+
+def record_battery(level):
+    """읽은 값 저장 + 계단식 경고 판정. 수동 확인(/battery)에서도 같은 규칙을 탄다."""
+    st = load_battery_state()
+    st.update(level=level, at=datetime.now().isoformat(timespec="seconds"),
+              fail_streak=0, fail_alerted=False)
+    reached = [s for s in BATTERY_STEPS if level <= s]
+    step = min(reached) if reached else None
+    prev = st.get("alerted_step")
+    if step is None:
+        # 15% 위로 회복 = 건전지를 갈았다는 뜻 → 계단 초기화, 다음에 또 닳으면 15%부터 다시 알림
+        st["alerted_step"] = None
+    elif prev is None or step < prev:
+        if hub_push(f"🔦 조명 배터리 {level}%", "곧 건전지 갈아야 해요"):
+            st["alerted_step"] = step   # 발송에 성공했을 때만 기록 → 실패하면 다음 검사에 재시도
+    elif level > prev:
+        st["alerted_step"] = step       # 값이 올라감 = 그 단계는 벗어남 (다시 내려오면 또 알림)
+    save_battery_state(st)
+    return st
+
+def _record_battery_failure(err):
+    st = load_battery_state()
+    st["fail_streak"] = int(st.get("fail_streak") or 0) + 1
+    if st["fail_streak"] >= BATTERY_FAIL_DAYS and not st.get("fail_alerted"):
+        if hub_push("🔦 조명이 안 잡혀요",
+                    f"{st['fail_streak']}일째 배터리를 못 읽었어요. 건전지가 다 됐을 수 있어요"):
+            st["fail_alerted"] = True
+    save_battery_state(st)
+    print(f"[배터리] 검사 실패 {st['fail_streak']}일째: {err}", flush=True)
+
+def battery_check(tries=BATTERY_MAX_TRIES, retry_sec=BATTERY_RETRY_SEC):
+    """하루치 검사 한 번. 실패하면 간격을 두고 재시도하고, 끝까지 안 되면 실패로 센다."""
+    last_err = None
+    for i in range(tries):
+        try:
+            level = get_battery_level()
+            st = record_battery(level)
+            print(f"[배터리] {level}% · 경고단계 {st.get('alerted_step')}", flush=True)
+            return level
+        except Exception as e:
+            last_err = e
+            print(f"[배터리] 읽기 실패 {i + 1}/{tries}: {e}", flush=True)
+            if i < tries - 1:
+                time.sleep(retry_sec)
+    _record_battery_failure(last_err)
+    return None
+
+def battery_watch_loop():
+    """매일 BATTERY_CHECK_HOUR 시에 한 번. '>=' 로 비교해서 맥이 그 시각에 자고 있었어도
+    깨어난 뒤 그날 안에 한 번은 검사한다(같은 날 중복은 last_date로 막는다)."""
+    last_date = None
+    while True:
+        try:
+            now = datetime.now()
+            if now.hour >= BATTERY_CHECK_HOUR and last_date != now.date():
+                last_date = now.date()
+                battery_check()
+        except Exception as e:
+            print(f"[배터리 감시 오류, 계속] {e}", flush=True)
+        time.sleep(60)
 
 # ── BLE 스캔 ─────────────────────────────────────
 async def _scan_ble_devices(duration=10):
@@ -242,17 +363,28 @@ def _mdns_info(local_ip, port):
 
 def _mdns_watch(zc, port, current_ip, interval=20):
     """Wi-Fi 재접속·DHCP 갱신 등으로 맥 IP가 바뀌면 switcher.local을 새 IP로 재등록.
-    (예전엔 IP 바뀔 때마다 폰에서 접속이 끊겨 수동 재시작해야 했음)"""
+    (예전엔 IP 바뀔 때마다 폰에서 접속이 끊겨 수동 재시작해야 했음)
+
+    update_service()만 쓰면 안 됨: 레코드 속 IP는 바뀌지만 zeroconf가 잡아둔
+    송신 소켓은 옛 IP에 묶인 채라, 폰이 "switcher.local 누구?"라고 물어도 응답이
+    LAN으로 못 나간다(맥 자기 자신만 캐시로 열림). 그래서 Zeroconf를 통째로
+    닫고 새로 만들어 소켓까지 새 IP로 다시 묶는다."""
+    from zeroconf import Zeroconf
     while True:
         time.sleep(interval)
         try:
             ip = _get_lan_ip()
             if ip and not ip.startswith("127.") and ip != current_ip:
-                zc.update_service(_mdns_info(ip, port))
-                print(f"🔄 IP 변경 감지 {current_ip} → {ip} · switcher.local 재등록")
+                try:
+                    zc.close()
+                except Exception:
+                    pass
+                zc = Zeroconf()
+                zc.register_service(_mdns_info(ip, port))
+                print(f"🔄 IP 변경 감지 {current_ip} → {ip} · switcher.local 재등록", flush=True)
                 current_ip = ip
         except Exception as e:
-            print(f"[mDNS 감시 오류, 계속] {e}")
+            print(f"[mDNS 감시 오류, 계속] {e}", flush=True)
 
 
 def register_mdns(port=PORT):
@@ -263,7 +395,7 @@ def register_mdns(port=PORT):
             raise RuntimeError(f"LAN IP를 못 찾음(감지값 {local_ip}) — mDNS 등록 건너뜀")
         zc = Zeroconf()
         zc.register_service(_mdns_info(local_ip, port))
-        print(f"🌐 mDNS 등록 완료: http://switcher.local:{port} ({local_ip})")
+        print(f"🌐 mDNS 등록 완료: http://switcher.local:{port} ({local_ip})", flush=True)
         # IP 변경 자동 감시 → switcher.local 스스로 따라감 (수동 재시작 불필요)
         threading.Thread(target=_mdns_watch, args=(zc, port, local_ip), daemon=True).start()
         return zc
@@ -339,6 +471,9 @@ HTML = r"""<!DOCTYPE html>
   .batbtn:active{ transform:scale(.97); }
   .batbtn .ic{ color:var(--accent); font-size:15px; }
   .batbtn b{ color:var(--fg); font-weight:600; font-variant-numeric:tabular-nums; }
+  .batbtn .when{ color:var(--faint); font-weight:500; }
+  .batbtn.low b{ color:#ff7b72; }
+  .batbtn.low .ic{ color:#ff7b72; }
 
   /* ── 카드 공통 ── */
   .sec{ margin-top:14px; }
@@ -509,7 +644,7 @@ HTML = r"""<!DOCTYPE html>
   <div class="cap">지금 조명은</div>
   <div class="word" id="st-lbl">대기</div>
   <div class="sub">방금 보낸 명령 기준이에요</div>
-  <button class="batbtn" onclick="checkBattery()"><svg class="ic"><use href="#i-battery"/></svg>배터리 <b id="bat-val">탭해서 확인</b></button>
+  <button class="batbtn" id="bat-btn" onclick="checkBattery()"><svg class="ic"><use href="#i-battery"/></svg>배터리 <b id="bat-val">탭해서 확인</b><span class="when" id="bat-when"></span></button>
 </div>
 
 <!-- 켜기/끄기 (맨 위, 엄지 안 뻗어도 되게) -->
@@ -642,11 +777,34 @@ async function cmd(action){
   finally{ tapped.innerHTML=orig; tapped.classList.remove('busy'); on.disabled=false; off.disabled=false; busy=false; }
 }
 
+/* 서버가 매일 저녁 9시에 알아서 재둔다 — 화면은 그 마지막 값을 바로 보여주고,
+   탭하면 그 자리에서 다시 잰다. */
+function batWhen(iso){
+  if(!iso) return '';
+  const d=new Date(iso), n=new Date();
+  const days=Math.round((new Date(n.getFullYear(),n.getMonth(),n.getDate())
+                       - new Date(d.getFullYear(),d.getMonth(),d.getDate()))/86400000);
+  if(days===0) return '오늘 '+d.getHours()+'시';
+  if(days===1) return '어제 '+d.getHours()+'시';
+  return (d.getMonth()+1)+'/'+d.getDate();
+}
+function renderBattery(st){
+  const el=document.getElementById('bat-val'), wh=document.getElementById('bat-when');
+  const btn=document.getElementById('bat-btn');
+  if(st.level==null){ el.textContent='탭해서 확인'; wh.textContent=''; btn.classList.remove('low'); return; }
+  el.textContent=st.level+'%';
+  wh.textContent=batWhen(st.at);
+  btn.classList.toggle('low', st.level<=15);
+}
+async function loadBatteryState(){
+  try{ renderBattery(await (await fetch('/battery/state')).json()); }catch(e){}
+}
 async function checkBattery(){
-  const el=document.getElementById('bat-val'); el.textContent='확인 중…';
+  const el=document.getElementById('bat-val'), wh=document.getElementById('bat-when');
+  el.textContent='확인 중…'; wh.textContent='';
   try{
     const d=await (await fetch('/battery')).json();
-    el.textContent = d.ok ? d.level+'%' : '실패';
+    if(d.ok) loadBatteryState(); else el.textContent='실패';
   }catch(e){ el.textContent='에러'; }
 }
 
@@ -906,6 +1064,7 @@ document.getElementById('dev-box').addEventListener('toggle', e=>{ e.target.data
 buildDays();
 loadDeviceInfo();
 loadSchedules();
+loadBatteryState();
 setInterval(loadSchedules,10000);
 </script>
 </body>
@@ -957,9 +1116,15 @@ def switch(action):
 def battery():
     try:
         level = get_battery_level()
+        record_battery(level)
         return jsonify({"ok": True, "level": level})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/battery/state")
+def battery_state():
+    """마지막으로 읽은 값 — 화면이 켜지자마자 보여주려고. BLE를 건드리지 않는다."""
+    return jsonify(load_battery_state())
 
 @app.route("/ble/reset", methods=["POST"])
 def ble_reset_route():
@@ -1099,10 +1264,89 @@ def apple_touch_icon():
     return Response(_APPLE_ICON_180, mimetype="image/png")
 
 
+# ── 명령 우체통 (허브 서버 경유) ───────────────────
+# 푸시(hub_push)의 반대 방향이다. 볼트 서버에서 도는 헤르메스가 조명을 끄고 싶어도
+# 이 맥으로는 직접 못 닿는다 — 맥은 공유기 뒤에 있고, 닿게 하려면 외부 문을 열어야
+# 하는데 집 안 기기에 그건 하면 안 된다.
+# 그래서 방향을 뒤집는다. 헤르메스는 허브 우체통에 넣기만 하고, 여기서 주기적으로
+# 가지러 간다. 나가는 통신만 하므로 문을 하나도 열지 않는다.
+CMDBOX_INTERVAL = 10        # 초. 조명은 "말하고 몇 초 뒤"면 충분히 즉각적이다
+CMDBOX_NAME = "switcher"    # 우체통에서 내 앞으로 온 것만 골라내는 이름
+
+
+def _cmdbox_urls():
+    """hub_push.json 의 푸시 주소에서 우체통 주소를 만든다 — 설정을 두 벌 두지 않으려고."""
+    cfg = load_hub_push()
+    if not cfg.get("url") or not cfg.get("token"):
+        return None, None, None
+    base = cfg["url"].replace("/api/push/notify", "/api/mailbox")
+    return base, base + "/%s/done", cfg["token"]
+
+
+def _cmdbox_call(url, token, payload=None):
+    import urllib.request
+    req = urllib.request.Request(
+        url, method="POST" if payload is not None else "GET",
+        data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+        headers={"Content-Type": "application/json", "X-Hub-Token": token})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def cmdbox_run(cmd, args):
+    """우체통 명령을 실제 동작으로 옮긴다. 여기 없는 명령은 거부한다 —
+    바깥에서 온 문자열이 그대로 실행되면 안 되므로 목록에 있는 것만 처리한다."""
+    if cmd == "switch":
+        action = str(args.get("action", "")).lower()
+        if action not in ("on", "off"):
+            return False, "action은 on/off만 가능"
+        run_command(action)
+        return True, "조명 %s" % ("켬" if action == "on" else "끔")
+    if cmd == "battery":
+        level = get_battery_level()
+        record_battery(level)
+        return True, "배터리 %s%%" % level
+    if cmd == "schedules":
+        return True, json.dumps(load_schedules() or [], ensure_ascii=False)[:500]
+    return False, "모르는 명령: %s" % cmd
+
+
+def cmdbox_loop():
+    box, done_tpl, token = _cmdbox_urls()
+    if not box:
+        print("[우체통] hub_push.json 없음 — 원격 명령 안 받음", flush=True)
+        return
+    print(f"[우체통] {CMDBOX_INTERVAL}초마다 확인", flush=True)
+    quiet_fail = 0
+    while True:
+        try:
+            items = _cmdbox_call(f"{box}?to={CMDBOX_NAME}", token).get("items", [])
+            quiet_fail = 0
+            for m in items:
+                try:
+                    ok, result = cmdbox_run(m.get("cmd", ""), m.get("args") or {})
+                except Exception as e:
+                    ok, result = False, str(e)
+                print(f"[우체통] {m.get('cmd')} → {result}", flush=True)
+                try:
+                    _cmdbox_call(done_tpl % m["id"], token, {"ok": ok, "result": result})
+                except Exception as e:
+                    print(f"[우체통] 결과 보고 실패: {e}", flush=True)
+        except Exception as e:
+            # 인터넷이 끊기거나 허브가 배포 중이면 실패한다. 10초마다 같은 줄을
+            # 찍으면 로그가 못 쓰게 되니 처음 한 번과 가끔만 남긴다.
+            quiet_fail += 1
+            if quiet_fail == 1 or quiet_fail % 60 == 0:
+                print(f"[우체통] 확인 실패({quiet_fail}회): {e}", flush=True)
+        time.sleep(CMDBOX_INTERVAL)
+
+
 if __name__ == "__main__":
     import socket
     load_schedules()
     threading.Thread(target=scheduler_loop, daemon=True).start()
+    threading.Thread(target=battery_watch_loop, daemon=True).start()
+    threading.Thread(target=cmdbox_loop, daemon=True).start()
     register_mdns(PORT)
     try:
         local_ip = socket.gethostbyname(socket.gethostname())
