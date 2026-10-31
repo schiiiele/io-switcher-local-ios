@@ -19,13 +19,17 @@ from bleak import BleakClient, BleakScanner
 CHAR_UUID    = "000015ba-0000-1000-8000-00805f9b34fb"
 BATTERY_UUID = "000015aa-0000-1000-8000-00805f9b34fb"
 
+# 공식 앱(kr.switcher.switcherm) 기준 값. 2구의 첫 번째 스위치는 1구와 같은 00/01,
+# 두 번째 스위치는 02/03 이다 (Switcher.java ON_1WAY=0 OFF_1WAY=1 ON_2WAY=2 OFF_2WAY=3).
+# v1.0.0 은 2구를 02~05 로 한 칸씩 밀어 써서, 스위치 1 버튼이 두 번째 스위치(02/03)를
+# 움직였고, 스위치 2 버튼은 공식 앱에 없는 04/05 를 보내 기기가 예상 밖으로 반응했다(사용자 제보).
 _KEYS = {
     (1, 1, "on"):  binascii.a2b_hex("00"),
     (1, 1, "off"): binascii.a2b_hex("01"),
-    (2, 1, "on"):  binascii.a2b_hex("02"),
-    (2, 1, "off"): binascii.a2b_hex("03"),
-    (2, 2, "on"):  binascii.a2b_hex("04"),
-    (2, 2, "off"): binascii.a2b_hex("05"),
+    (2, 1, "on"):  binascii.a2b_hex("00"),
+    (2, 1, "off"): binascii.a2b_hex("01"),
+    (2, 2, "on"):  binascii.a2b_hex("02"),
+    (2, 2, "off"): binascii.a2b_hex("03"),
 }
 
 # ── 전역 이벤트 루프 (앱 수명 내내 살아 있음) ────
