@@ -26,8 +26,10 @@ CHAR_UUID    = "000015ba-0000-1000-8000-00805f9b34fb"
 BATTERY_UUID = "000015aa-0000-1000-8000-00805f9b34fb"
 ON_KEY1      = binascii.a2b_hex("00")  # 1구 ON
 OFF_KEY1     = binascii.a2b_hex("01")  # 1구 OFF
-ON_KEY2      = binascii.a2b_hex("05")  # 2구 ON
-OFF_KEY2     = binascii.a2b_hex("03")  # 2구 OFF
+# 2구는 두 번째 스위치만 켜고 끈다. 공식 앱 값(Switcher.java ON_2WAY=2, OFF_2WAY=3).
+# 예전 ON 값 05 는 공식 명령이 아니라 쓰지 않는다 (2구 첫 번째 스위치는 00/01).
+ON_KEY2      = binascii.a2b_hex("02")  # 2구 두 번째 스위치 ON
+OFF_KEY2     = binascii.a2b_hex("03")  # 2구 두 번째 스위치 OFF
 
 PORT = 5001
 
