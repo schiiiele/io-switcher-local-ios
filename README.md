@@ -73,14 +73,42 @@ python3.11 -m pip install flask bleak zeroconf
 
 ### 🪟 Windows
 
+> **먼저 알아둘 것 — 명령은 "명령 프롬프트(CMD)" 검은 창에 입력합니다.**
+> Python을 설치하면 생기는 **"Python 3.x" 창(`>>>` 표시가 있는 창)은 파이썬 코드만 받는 창**이라, 거기에 `pip install …`이나 `python …`을 치면 전부 `SyntaxError: invalid syntax`가 납니다. 그 창은 닫고, 시작 메뉴에서 **cmd**를 검색해 명령 프롬프트를 여세요.
+> 또한 아래 명령 상자의 첫 줄 ` ```bash ` 와 마지막 줄 ` ``` ` 는 "여기부터 명령"이라는 표시일 뿐 명령이 아니므로 치지 않습니다. 상자 안의 내용만 입력하세요.
+
+**1. Python 설치**
 [Python 공식 홈페이지](https://www.python.org/downloads/)에서 Python 3.11 이상을 설치합니다.
 설치 시 **"Add Python to PATH"** 를 반드시 체크하세요.
 
-이후 명령 프롬프트(CMD) 또는 PowerShell에서:
+**2. 프로젝트 받기**
+이 페이지 상단의 초록색 **Code** 버튼 → **Download ZIP** 으로 받은 뒤 압축을 풉니다. (보통 `다운로드` 폴더에 `io-switcher-local-ios-main` 폴더가 생깁니다.)
+`io-switcher-local-ios`는 명령이 아니라 **폴더 이름**이니 CMD에 그대로 치지 마세요.
+
+**3. CMD에서 그 폴더로 이동**
+
+```bash
+cd %USERPROFILE%\Downloads\io-switcher-local-ios-main
+```
+
+다른 곳에 풀었다면 그 폴더 경로로 바꿔 넣으세요. 탐색기에서 폴더를 연 뒤 주소창에 `cmd`를 치고 엔터를 눌러도 그 폴더에서 바로 CMD가 열립니다.
+
+**4. 필요한 라이브러리 설치**
 
 ```bash
 pip install flask bleak zeroconf
 ```
+
+필요한 건 이 세 개뿐입니다. (`fastapi`, `uvicorn` 등 다른 안내에서 본 패키지는 이 프로젝트와 무관합니다.)
+`pip`가 없다고 나오면 `python -m pip install flask bleak zeroconf` 로 해보세요.
+
+**5. 서버 실행**
+
+```bash
+python switcher_server.py
+```
+
+윈도우에는 `python3.11`이라는 명령이 없으니 그냥 `python`으로 실행합니다. 실행 결과 확인 방법은 아래 **서버 실행** 항목을 보세요.
 
 ---
 
@@ -92,7 +120,7 @@ pip install flask bleak zeroconf
 python3.11 switcher_server.py
 ```
 
-> 윈도우이거나 버전 충돌이 생기면 `python switcher_server.py`
+> 윈도우에서는 `python switcher_server.py` (맥에서도 버전 충돌이 생기면 이렇게 실행하세요)
 
 실행 후 터미널에 아래와 같이 뜨면 성공입니다.
 
@@ -272,6 +300,11 @@ python3.11 /tmp/del_timers.py
 
 ## ⚠️ 주의사항
 
+- **명령을 쳤는데 "내부 또는 외부 명령… 아닙니다" 또는 `SyntaxError`가 날 때(윈도우)** — 명령을 넣은 창이나 방식이 잘못된 경우입니다.
+  - `SyntaxError: invalid syntax` → **Python 창(`>>>`)에 입력**한 겁니다. 그 창을 닫고 **명령 프롬프트(CMD)** 에 입력하세요.
+  - `'```bash'은(는) 내부 또는 외부 명령…` → 안내문의 ` ```bash ` 줄까지 복사한 겁니다. 그 줄은 빼고 안의 명령만 입력하세요.
+  - `'io-switcher-local…'은(는) 내부 또는 외부 명령…` → 그건 명령이 아니라 **폴더 이름**입니다. 위 **Windows** 항목의 2~3번처럼 ZIP을 받아 풀고 `cd`로 그 폴더에 들어간 뒤 `python switcher_server.py`를 실행하세요.
+  - `python3.11`이 없다고 나옴 → 윈도우에서는 그냥 `python`을 씁니다.
 - **같은 Wi-Fi 필수** — 서버(컴퓨터)와 클라이언트(폰)가 반드시 같은 네트워크에 있어야 합니다.
 - **접속이 안 될 때** — 폰 브라우저를 완전히 닫았다 다시 열어보고, 그래도 안 되면 터미널에 표시된 IP로 직접 접속해 보세요. 맥 시스템 설정에서 Python의 네트워크(로컬 네트워크) 접근이 허용돼 있는지도 확인하세요.
   - **같은 와이파이인데도 컴퓨터에선 되고 폰에서만 안 될 때(윈도우)** — 십중팔구 **윈도우 방화벽**이 폰의 접속을 막고 있는 겁니다. 컴퓨터 자체 브라우저는 방화벽을 거치지 않아서 항상 되고, 폰처럼 다른 기기에서 들어오는 접속만 막히는 게 특징입니다.
